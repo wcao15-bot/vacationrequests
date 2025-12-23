@@ -47,6 +47,7 @@
             const [view, setView] = useState('resolver');
             const [showAddModal, setShowAddModal] = useState(false);
             const [showStaffModal, setShowStaffModal] = useState(false);
+            const [deleteConfirmId, setDeleteConfirmId] = useState(null);
             
             const [staff, setStaff] = useState(() => {
                 const saved = localStorage.getItem('pto_staff_v2');
@@ -200,11 +201,12 @@
             };
 
             const deleteEntry = (id) => setEntries(entries.filter(e => e.id !== id));
-            const deleteStaff = (id) => {
-                if(window.confirm("Delete this employee and all their history?")) {
-                    setStaff(staff.filter(s => s.id !== id));
-                    setEntries(entries.filter(e => e.staffId !== id));
-                }
+            
+            const handleConfirmDeleteStaff = () => {
+                if (!deleteConfirmId) return;
+                setStaff(staff.filter(s => s.id !== deleteConfirmId));
+                setEntries(entries.filter(e => e.staffId !== deleteConfirmId));
+                setDeleteConfirmId(null);
             };
 
             return (
@@ -297,7 +299,7 @@
                                                     <td className="px-6 py-4">{m.totalHours}h</td>
                                                     <td className="px-6 py-4 text-slate-500">{s.hireDate}</td>
                                                     <td className="px-6 py-4 text-right">
-                                                        <button onClick={() => deleteStaff(s.id)} className="text-slate-300 hover:text-red-500"><i data-lucide="user-minus" className="w-4 h-4"></i></button>
+                                                        <button onClick={() => setDeleteConfirmId(s.id)} className="text-slate-300 hover:text-red-500"><i data-lucide="user-minus" className="w-4 h-4"></i></button>
                                                     </td>
                                                 </tr>
                                             );
@@ -390,6 +392,37 @@
                                     <button type="submit" className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold">Add Staff</button>
                                 </div>
                             </form>
+                        </div>
+                    )}
+
+                    {/* Delete Staff Confirmation Modal */}
+                    {deleteConfirmId && (
+                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 modal-overlay">
+                            <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl border p-6 text-center">
+                                <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <i data-lucide="alert-triangle" className="w-8 h-8 text-red-600"></i>
+                                </div>
+                                <h3 className="text-lg font-bold mb-2">Delete Employee?</h3>
+                                <p className="text-sm text-slate-500 mb-6">
+                                    This will permanently remove <strong>{staff.find(s => s.id === deleteConfirmId)?.name}</strong> and all associated PTO history.
+                                </p>
+                                <div className="flex gap-3">
+                                    <button 
+                                        type="button" 
+                                        onClick={() => setDeleteConfirmId(null)} 
+                                        className="flex-1 py-2 border rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-50"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button 
+                                        type="button" 
+                                        onClick={handleConfirmDeleteStaff} 
+                                        className="flex-1 py-2 bg-red-600 text-white rounded-lg text-sm font-bold shadow-md hover:bg-red-700"
+                                    >
+                                        Delete
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     )}
                 </div>
