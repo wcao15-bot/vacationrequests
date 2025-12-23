@@ -289,7 +289,7 @@
                                 </div>
                                 <table className="w-full text-left">
                                     <thead className="bg-slate-50 text-[10px] uppercase font-bold text-slate-500">
-                                        <tr><th className="px-6 py-4">Name</th><th className="px-6 py-4">Net Score (P2)</th><th className="px-6 py-4">Last Break (P3)</th><th className="px-6 py-4">Total Used (P4)</th><th className="px-6 py-4">Hire Date (P5)</th><th className="px-6 py-4"></th></tr>
+                                        <tr><th className="px-6 py-4">Name</th><th className="px-6 py-4">Net Score (P2)</th><th className="px-6 py-4">Last Break (P3)</th><th className="px-6 py-4">Total Used (P4)</th><th className="px-6 py-4">Hire Date (P5)</th><th className="px-6 py-4 text-right">Actions</th></tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100 text-sm">
                                         {staff.map(s => {
@@ -310,7 +310,13 @@
                                                     <td className="px-6 py-4">{m.totalHours}h</td>
                                                     <td className="px-6 py-4 text-slate-500">{s.hireDate}</td>
                                                     <td className="px-6 py-4 text-right">
-                                                        <button onClick={() => setDeleteConfirmId(s.id)} className="text-slate-300 hover:text-red-500"><i data-lucide="user-minus" className="w-4 h-4"></i></button>
+                                                        <button 
+                                                            onClick={() => setDeleteConfirmId(s.id)} 
+                                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-50 text-red-600 rounded-md hover:bg-red-100 transition font-bold text-xs"
+                                                        >
+                                                            <i data-lucide="user-minus" className="w-3.5 h-3.5"></i>
+                                                            Delete
+                                                        </button>
                                                     </td>
                                                 </tr>
                                             );
@@ -328,7 +334,7 @@
                                 </div>
                                 <table className="w-full text-left text-sm">
                                     <thead className="bg-slate-50 text-[10px] uppercase font-bold text-slate-500 border-b">
-                                        <tr><th className="px-6 py-4">Date</th><th className="px-6 py-4">Staff</th><th className="px-6 py-4">Status</th><th className="px-6 py-4">Impact</th><th className="px-6 py-4">Action</th></tr>
+                                        <tr><th className="px-6 py-4">Date</th><th className="px-6 py-4">Staff</th><th className="px-6 py-4">Status</th><th className="px-6 py-4">Impact</th><th className="px-6 py-4 text-right">Action</th></tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
                                         {entries.length === 0 ? (
@@ -349,8 +355,14 @@
                                                          (e.status === 'Relinquished' && e.type === 'Popular' ? '+1 Voluntary Credit' : 
                                                          (e.status === 'Denied' && e.type === 'Popular' ? '+1 Denial Credit' : 'No Impact'))}
                                                     </td>
-                                                    <td className="px-6 py-4">
-                                                        <button onClick={() => deleteEntry(e.id)} className="text-red-400 hover:text-red-600"><i data-lucide="trash-2" className="w-4 h-4"></i></button>
+                                                    <td className="px-6 py-4 text-right">
+                                                        <button 
+                                                            onClick={() => deleteEntry(e.id)} 
+                                                            className="text-red-400 hover:text-red-600 p-1.5 hover:bg-red-50 rounded-md transition"
+                                                            title="Delete History Entry"
+                                                        >
+                                                            <i data-lucide="trash-2" className="w-4 h-4"></i>
+                                                        </button>
                                                     </td>
                                                 </tr>
                                             ))
