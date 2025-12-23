@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PTO Conflict & Tier Tracker 2026</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        .tier-card { transition: all 0.3s ease; }
+        .tier-active { border-left: 4px solid #3b82f6; background-color: #eff6ff; }
+        .modal-overlay { background-color: rgba(0, 0, 0, 0.5); backdrop-filter: blur(4px); }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        const POLICY_START = "2026-02-01";
+        const POLICY_END = "2027-01-31";
+
+        const POPULAR_DATES = [
+            { date: "2026-02-13", name: "Presidents' Day Friday", points: 2, holiday: "Presidents" },
+            { date: "2026-05-22", name: "Memorial Day Friday", points: 2, holiday: "Memorial" },
+            { date: "2026-06-18", name: "Juneteenth Eve", points: 2, holiday: "Juneteenth" },
+            { date: "2026-07-02", name: "Indep. Day Eve", points: 2, holiday: "Independence" },
+            { date: "2026-09-04", name: "Labor Day Friday", points: 2, holiday: "Labor" },
+            { date: "2026-10-09", name: "Columbus Day Friday", points: 2, holiday: "Columbus" },
+            { date: "2026-11-10", name: "Veterans Day Eve", points: 1, holiday: "Veterans" },
+            { date: "2026-11-26", name: "Thanksgiving Day", points: 2, holiday: "Thanksgiving", isMajor: true },
+            { date: "2026-11-27", name: "Black Friday", points: 2, holiday: "Thanksgiving" },
+            { date: "2026-12-24", name: "Christmas Eve", points: 2, holiday: "Christmas" },
+            { date: "2026-12-25", name: "Christmas Day", points: 2, holiday: "Christmas", isMajor: true },
+            { date: "2026-12-31", name: "New Year's Eve", points: 2, holiday: "NewYear" },
+            { date: "2027-01-01", name: "New Year's Day", points: 2, holiday: "NewYear", isMajor: true },
+            { date: "2027-01-15", name: "MLK Day Friday", points: 2, holiday: "MLK" },
+        ];
+
+        const App = () => {
+            const [view, setView] = useState('resolver');
+            const [showAddModal, setShowAddModal] = useState(false);
+            const [showStaffModal, setShowStaffModal] = useState(false);
+            
+            const [staff, setStaff] = useState(() => {
+                const saved = localStorage.getItem('pto_staff_v2');
+                return saved ? JSON.parse(saved) : [
+                    { id: 1, name: "Sarah Miller", hireDate: "2018-05-15", holidays2025: ["Christmas", "Memorial"] },
+                    { id: 2, name: "John Smith", hireDate: "2022-02-01", holidays2025: ["Thanksgiving", "NewYear"] },
+                    { id: 3, name: "Maria Garcia", hireDate: "2024-11-10", holidays2025: [] },
+                    { id: 4, name: "Kevin Newhire", hireDate: "2026-06-01", holidays2025: [] }
+                ];
+            });
+            
+            const [entries, setEntries] = useState(() => {
+                const saved = localStorage.getItem('pto_entries_v2');
+                return saved ? JSON.parse(saved) : [];
+            });
+
+            const [newEntry, setNewEntry] = useState({
+                date: new Date().toISOString().split('T')[0],
+                staffId: "",
+                status: "Approved",
+                duration: 8
+            });
+
+            const [newStaff, setNewStaff] = useState({
+                name: "",
+                hireDate: new Date().toISOString().split('T')[0],
+                holidays2025: []
+            });
+
+            useEffect(() => {
+                localStorage.setItem('pto_staff_v2', JSON.stringify(staff));
+                localStorage.setItem('pto_entries_v2', JSON.stringify(entries));
+            }, [staff, entries]);
+
+            const getStaffMetrics = (staffMember) => {
+                const yearEntries = entries.filter(e => e.staffId === staffMember.id && e.date >= POLICY_START && e.date <= POLICY_END);
+                const pointsReceived = yearEntries.reduce((sum, e) => (e.status === 'Approved' ? sum + (e.points || 0) : sum), 0);
+                const denialCredits = yearEntries.filter(e => e.status === 'Denied' && e.type === 'Popular').length;
+                const netScore = pointsReceived - denialCredits;
+                const totalHours = yearEntries.reduce((sum, e) => (e.status === 'Approved' ? sum + Number(e.duration || 0) : sum), 0);
+                const approvedBreaks = yearEntries
+                    .filter(e => e.status === 'Approved' && Number(e.duration) >= 24)
+                    .sort((a, b) => new Date(b.date) - new Date(a.date));
+                const lastBreakDate = approvedBreaks.length > 0 ? approvedBreaks[0].date : "None Recorded";
+                const isNewHire = new Date(staffMember.hireDate).getFullYear() === 2026;
+
+                return { pointsReceived, denialCredits, netScore, totalHours, lastBreakDate, isNewHire };
+            };
+
+            const [selectedDate, setSelectedDate] = useState("2026-12-25");
+            const [competitors, setCompetitors] = useState([]);
+
+            const resolveConflict = () => {
+                if (competitors.length < 2) return null;
+                const targetPopDate = POPULAR_DATES.find(d => d.date === selectedDate);
+                const targetHoliday = targetPopDate?.holiday || null;
+                const results = competitors.map(id => {
+                    const s = staff.find(x => x.id === id);
+                    return { ...s, metrics: getStaffMetrics(s) };
+                });
+
+                let logs = [];
+                let activeCompetitors = [...results];
+
+                // Tier 1
+                if (targetHoliday) {
+                    const tier1Winners = activeCompetitors.filter(s => !s.holidays2025.includes(targetHoliday));
+                    if (tier1Winners.length > 0 && tier1Winners.length < activeCompetitors.length) {
+                        logs.push({ tier: 1, message: "Priority 1: Holiday Rotation", winners: tier1Winners.map(w => w.name), note: `Excluded those who took ${targetHoliday} in 2025.` });
+                        activeCompetitors = tier1Winners;
+                    } else {
+                        logs.push({ tier: 1, message: "Priority 1: Holiday Rotation", winners: activeCompetitors.map(w => w.name), note: "No resolution at this tier." });
+                    }
+                }
+                if (activeCompetitors.length === 1) return { winner: activeCompetitors[0], logs };
+
+                // Tier 2
+                const minNetScore = Math.min(...activeCompetitors.map(s => s.metrics.netScore));
+                const tier2Winners = activeCompetitors.filter(s => s.metrics.netScore === minNetScore);
+                if (tier2Winners.length < activeCompetitors.length) {
+                    logs.push({ tier: 2, message: "Priority 2: Net Score", winners: tier2Winners.map(w => w.name), note: `Filtered for lowest Net Score (${minNetScore}).` });
+                    activeCompetitors = tier2Winners;
+                } else {
+                    logs.push({ tier: 2, message: "Priority 2: Net Score", winners: activeCompetitors.map(w => w.name), note: `Everyone has a Net Score of ${minNetScore}.` });
+                }
+                if (activeCompetitors.length === 1) return { winner: activeCompetitors[0], logs };
+
+                // Tier 3
+                const parseDate = (d) => d === "None Recorded" ? new Date("2000-01-01") : new Date(d);
+                const oldestBreakDate = new Date(Math.min(...activeCompetitors.map(s => parseDate(s.metrics.lastBreakDate))));
+                const tier3Winners = activeCompetitors.filter(s => parseDate(s.metrics.lastBreakDate).getTime() === oldestBreakDate.getTime());
+                if (tier3Winners.length < activeCompetitors.length) {
+                    logs.push({ tier: 3, message: "Priority 3: Time Since Last Break", winners: tier3Winners.map(w => w.name), note: `Filtered for person most overdue for a 3+ day break.` });
+                    activeCompetitors = tier3Winners;
+                } else {
+                    logs.push({ tier: 3, message: "Priority 3: Time Since Last Break", winners: activeCompetitors.map(w => w.name), note: "No resolution at this tier." });
+                }
+                if (activeCompetitors.length === 1) return { winner: activeCompetitors[0], logs };
+
+                // Tier 4
+                const minHours = Math.min(...activeCompetitors.map(s => s.metrics.totalHours));
+                const tier4Winners = activeCompetitors.filter(s => s.metrics.totalHours === minHours);
+                if (tier4Winners.length < activeCompetitors.length) {
+                    logs.push({ tier: 4, message: "Priority 4: PTO Conservation", winners: tier4Winners.map(w => w.name), note: `Filtered for lowest PTO used (${minHours}h).` });
+                    activeCompetitors = tier4Winners;
+                } else {
+                    logs.push({ tier: 4, message: "Priority 4: Conservation", winners: activeCompetitors.map(w => w.name), note: "No resolution at this tier." });
+                }
+                if (activeCompetitors.length === 1) return { winner: activeCompetitors[0], logs };
+
+                // Tier 5
+                const senioritySorted = [...activeCompetitors].sort((a, b) => {
+                    if (a.metrics.isNewHire && !b.metrics.isNewHire) return 1;
+                    if (!a.metrics.isNewHire && b.metrics.isNewHire) return -1;
+                    return new Date(a.hireDate) - new Date(b.hireDate);
+                });
+                const winner = senioritySorted[0];
+                logs.push({ tier: 5, message: "Priority 5: Seniority", winners: [winner.name], note: "Resolved by company tenure." });
+                return { winner, logs };
+            };
+
+            const resolution = useMemo(resolveConflict, [selectedDate, competitors, entries]);
+
+            const handleAddEntry = (e) => {
+                e.preventDefault();
+                if (!newEntry.staffId) return;
+                const popDate = POPULAR_DATES.find(d => d.date === newEntry.date);
+                const entry = {
+                    id: Date.now(),
+                    staffId: parseInt(newEntry.staffId),
+                    date: newEntry.date,
+                    status: newEntry.status,
+                    duration: parseInt(newEntry.duration),
+                    type: popDate ? 'Popular' : 'Standard',
+                    points: popDate ? popDate.points : 0
+                };
+                setEntries([entry, ...entries]);
+                setShowAddModal(false);
+            };
+
+            const handleAddStaff = (e) => {
+                e.preventDefault();
+                if (!newStaff.name) return;
+                const s = {
+                    ...newStaff,
+                    id: Date.now()
+                };
+                setStaff([...staff, s]);
+                setNewStaff({ name: "", hireDate: new Date().toISOString().split('T')[0], holidays2025: [] });
+                setShowStaffModal(false);
+            };
+
+            const deleteEntry = (id) => setEntries(entries.filter(e => e.id !== id));
+            const deleteStaff = (id) => {
+                if(window.confirm("Delete this employee and all their history?")) {
+                    setStaff(staff.filter(s => s.id !== id));
+                    setEntries(entries.filter(e => e.staffId !== id));
+                }
+            };
+
+            return (
+                <div className="min-h-screen">
+                    <nav className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center sticky top-0 z-50">
+                        <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center text-white">
+                                <i data-lucide="shield-check" className="w-5 h-5"></i>
+                            </div>
+                            <h1 className="text-xl font-bold text-slate-800">PTO Tier Tracker <span className="text-blue-600">2026</span></h1>
+                        </div>
+                        <div className="flex gap-4">
+                            <button onClick={() => setView('resolver')} className={`px-4 py-2 rounded-lg font-medium transition ${view === 'resolver' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-100'}`}>Resolver</button>
+                            <button onClick={() => setView('staff')} className={`px-4 py-2 rounded-lg font-medium transition ${view === 'staff' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-100'}`}>Staff</button>
+                            <button onClick={() => setView('logs')} className={`px-4 py-2 rounded-lg font-medium transition ${view === 'logs' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-100'}`}>History</button>
+                        </div>
+                    </nav>
+
+                    <main className="p-6 max-w-6xl mx-auto">
+                        {view === 'resolver' && (
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                                <div className="lg:col-span-1 bg-white p-6 rounded-2xl shadow-sm border border-slate-200 h-fit">
+                                    <h2 className="text-lg font-bold mb-4 flex items-center gap-2"><i data-lucide="users" className="w-5 h-5"></i> Resolve Conflict</h2>
+                                    <div className="mb-6">
+                                        <label className="block text-sm font-semibold text-slate-700 mb-2">Request Date</label>
+                                        <select className="w-full p-2.5 rounded-lg border border-slate-300 outline-none" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)}>
+                                            {POPULAR_DATES.map(d => <option key={d.date} value={d.date}>{d.date} — {d.name}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="mb-6">
+                                        <label className="block text-sm font-semibold text-slate-700 mb-2">Competing Staff</label>
+                                        <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
+                                            {staff.map(s => (
+                                                <label key={s.id} className={`flex items-center p-3 rounded-xl border cursor-pointer transition ${competitors.includes(s.id) ? 'border-blue-500 bg-blue-50' : 'border-slate-200 hover:bg-slate-50'}`}>
+                                                    <input type="checkbox" className="w-4 h-4 text-blue-600" checked={competitors.includes(s.id)} onChange={() => setCompetitors(prev => prev.includes(s.id) ? prev.filter(i => i !== s.id) : [...prev, s.id])} />
+                                                    <span className="ml-3 font-medium text-slate-700">{s.name}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="lg:col-span-2 space-y-6">
+                                    {!resolution ? (
+                                        <div className="bg-white border-2 border-dashed border-slate-200 rounded-2xl h-80 flex flex-col items-center justify-center text-slate-400">
+                                            <p>Select 2 or more staff to see tie-breaker logic</p>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <div className="bg-gradient-to-br from-blue-700 to-indigo-800 text-white p-8 rounded-2xl shadow-xl">
+                                                <p className="text-blue-200 uppercase text-xs font-bold mb-1">Approved Winner:</p>
+                                                <h3 className="text-4xl font-black">{resolution.winner.name}</h3>
+                                            </div>
+                                            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm">
+                                                {resolution.logs.map((log, idx) => (
+                                                    <div key={idx} className={`p-5 border-b border-slate-100 last:border-0 ${log.winners.length === 1 && idx === resolution.logs.length - 1 ? 'tier-active' : ''}`}>
+                                                        <div className="flex justify-between mb-1"><h5 className="font-bold text-blue-600 text-xs uppercase">{log.message}</h5><span className="text-[10px] bg-slate-100 px-2 py-0.5 rounded">Tier {log.tier}</span></div>
+                                                        <p className="text-slate-500 text-sm mb-2">{log.note}</p>
+                                                        <div className="flex flex-wrap gap-2">{log.winners.map(w => <span key={w} className={`px-2 py-1 rounded-md text-xs font-medium ${log.winners.length === 1 ? 'bg-green-100 text-green-700' : 'bg-slate-100'}`}>{w}</span>)}</div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {view === 'staff' && (
+                            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                                <div className="p-6 border-b flex justify-between items-center bg-slate-50/50">
+                                    <h2 className="font-bold">Team Roster</h2>
+                                    <button onClick={() => setShowStaffModal(true)} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md hover:bg-blue-700 transition">+ Add Staff</button>
+                                </div>
+                                <table className="w-full text-left">
+                                    <thead className="bg-slate-50 text-[10px] uppercase font-bold text-slate-500">
+                                        <tr><th className="px-6 py-4">Name</th><th className="px-6 py-4">Net Score (P2)</th><th className="px-6 py-4">Last Break (P3)</th><th className="px-6 py-4">Total Used (P4)</th><th className="px-6 py-4">Hire Date (P5)</th><th className="px-6 py-4"></th></tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100 text-sm">
+                                        {staff.map(s => {
+                                            const m = getStaffMetrics(s);
+                                            return (
+                                                <tr key={s.id} className="hover:bg-slate-50">
+                                                    <td className="px-6 py-4">
+                                                        <div className="font-bold text-slate-800">{s.name}</div>
+                                                        <div className="text-[10px] text-slate-400 uppercase tracking-tight">Took In 2025: {s.holidays2025.join(', ') || 'None'}</div>
+                                                    </td>
+                                                    <td className="px-6 py-4"><span className={`font-bold ${m.netScore < 0 ? 'text-green-600' : ''}`}>{m.netScore}</span> <span className="text-[10px] text-slate-400">({m.pointsReceived} pts, {m.denialCredits} DCs)</span></td>
+                                                    <td className="px-6 py-4 text-slate-500">{m.lastBreakDate}</td>
+                                                    <td className="px-6 py-4">{m.totalHours}h</td>
+                                                    <td className="px-6 py-4 text-slate-500">{s.hireDate}</td>
+                                                    <td className="px-6 py-4 text-right">
+                                                        <button onClick={() => deleteStaff(s.id)} className="text-slate-300 hover:text-red-500"><i data-lucide="user-minus" className="w-4 h-4"></i></button>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+
+                        {view === 'logs' && (
+                            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm">
+                                <div className="p-6 border-b flex justify-between items-center bg-slate-50/50">
+                                    <h2 className="font-bold">Request History</h2>
+                                    <button onClick={() => setShowAddModal(true)} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md hover:bg-blue-700 transition">+ Add Entry</button>
+                                </div>
+                                <table className="w-full text-left text-sm">
+                                    <thead className="bg-slate-50 text-[10px] uppercase font-bold text-slate-500 border-b">
+                                        <tr><th className="px-6 py-4">Date</th><th className="px-6 py-4">Staff</th><th className="px-6 py-4">Status</th><th className="px-6 py-4">Impact</th><th className="px-6 py-4">Action</th></tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {entries.length === 0 ? (
+                                            <tr><td colSpan="5" className="px-6 py-8 text-center text-slate-400">No entries recorded yet.</td></tr>
+                                        ) : (
+                                            entries.map(e => (
+                                                <tr key={e.id} className="hover:bg-slate-50">
+                                                    <td className="px-6 py-4 font-mono font-bold text-slate-600">{e.date}</td>
+                                                    <td className="px-6 py-4 font-medium">{staff.find(s => s.id === e.staffId)?.name}</td>
+                                                    <td className="px-6 py-4">
+                                                        <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${e.status === 'Approved' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{e.status}</span>
+                                                    </td>
+                                                    <td className="px-6 py-4 text-slate-600">
+                                                        {e.status === 'Approved' ? `+${e.points} Points` : (e.type === 'Popular' ? '+1 Denial Credit' : 'No Impact')}
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        <button onClick={() => deleteEntry(e.id)} className="text-red-400 hover:text-red-600"><i data-lucide="trash-2" className="w-4 h-4"></i></button>
+                                                    </td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </main>
+
+                    {/* Add Entry Modal */}
+                    {showAddModal && (
+                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 modal-overlay">
+                            <form onSubmit={handleAddEntry} className="bg-white rounded-2xl w-full max-w-md shadow-2xl border p-6">
+                                <h3 className="text-lg font-bold mb-4">Add PTO Entry</h3>
+                                <div className="space-y-4">
+                                    <div><label className="block text-xs font-bold mb-1 uppercase text-slate-500">Date</label><input type="date" required className="w-full p-2 border rounded-lg" value={newEntry.date} onChange={e => setNewEntry({...newEntry, date: e.target.value})} /></div>
+                                    <div><label className="block text-xs font-bold mb-1 uppercase text-slate-500">Staff Member</label><select required className="w-full p-2 border rounded-lg" value={newEntry.staffId} onChange={e => setNewEntry({...newEntry, staffId: e.target.value})}><option value="">Select Staff...</option>{staff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+                                    <div><label className="block text-xs font-bold mb-1 uppercase text-slate-500">Status</label><select className="w-full p-2 border rounded-lg" value={newEntry.status} onChange={e => setNewEntry({...newEntry, status: e.target.value})}><option value="Approved">Approved</option><option value="Denied">Denied</option></select></div>
+                                    <div><label className="block text-xs font-bold mb-1 uppercase text-slate-500">Hours Used</label><input type="number" required className="w-full p-2 border rounded-lg" value={newEntry.duration} onChange={e => setNewEntry({...newEntry, duration: e.target.value})} /></div>
+                                </div>
+                                <div className="mt-6 flex gap-3">
+                                    <button type="button" onClick={() => setShowAddModal(false)} className="flex-1 py-2 border rounded-lg text-sm font-bold">Cancel</button>
+                                    <button type="submit" className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold">Save Entry</button>
+                                </div>
+                            </form>
+                        </div>
+                    )}
+
+                    {/* Add Staff Modal */}
+                    {showStaffModal && (
+                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 modal-overlay">
+                            <form onSubmit={handleAddStaff} className="bg-white rounded-2xl w-full max-w-md shadow-2xl border p-6">
+                                <h3 className="text-lg font-bold mb-4">Add New Employee</h3>
+                                <div className="space-y-4">
+                                    <div><label className="block text-xs font-bold mb-1 uppercase text-slate-500">Full Name</label><input type="text" required placeholder="John Doe" className="w-full p-2 border rounded-lg" value={newStaff.name} onChange={e => setNewStaff({...newStaff, name: e.target.value})} /></div>
+                                    <div><label className="block text-xs font-bold mb-1 uppercase text-slate-500">Company Hire Date</label><input type="date" required className="w-full p-2 border rounded-lg" value={newStaff.hireDate} onChange={e => setNewStaff({...newStaff, hireDate: e.target.value})} /></div>
+                                    <div>
+                                        <label className="block text-xs font-bold mb-1 uppercase text-slate-500">Holidays Taken in 2025</label>
+                                        <div className="grid grid-cols-2 gap-2 text-xs">
+                                            {["Thanksgiving", "Christmas", "NewYear", "Memorial", "Labor", "Independence"].map(h => (
+                                                <label key={h} className="flex items-center gap-2 bg-slate-50 p-2 rounded">
+                                                    <input type="checkbox" checked={newStaff.holidays2025.includes(h)} onChange={e => {
+                                                        const list = e.target.checked ? [...newStaff.holidays2025, h] : newStaff.holidays2025.filter(x => x !== h);
+                                                        setNewStaff({...newStaff, holidays2025: list});
+                                                    }} />
+                                                    {h}
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="mt-6 flex gap-3">
+                                    <button type="button" onClick={() => setShowStaffModal(false)} className="flex-1 py-2 border rounded-lg text-sm font-bold">Cancel</button>
+                                    <button type="submit" className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold">Add Staff</button>
+                                </div>
+                            </form>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+        setTimeout(() => lucide.createIcons(), 500);
+    </script>
+</body>
+</html>
